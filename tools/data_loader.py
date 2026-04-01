@@ -81,7 +81,7 @@ class Batch:
         """
         tgt_mask = (tgt != pad).unsqueeze(-2)   # 为目标语言中的非pad部分生成mask
         # 添加后续词的遮蔽（subsequent_mask在CPU上生成，使用type_as保证类型/设备一致）
-        tgt_mask = tgt_mask & Variable(subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data))
+        tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask)
         return tgt_mask  # 返回目标语言的mask
 
 

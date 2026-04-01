@@ -1,5 +1,6 @@
 import config
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from tools.data_loader import MTDataset
@@ -54,7 +55,7 @@ def run_epoch(data, model, criterion, optimizer=None, accum_steps=1, scaler=None
 
         # 前向传播
         if use_amp and scaler is not None:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast(device_type='cuda'):
                 out = model(src, trg, src_mask, trg_mask)
                 # 使用模型的generator生成预测
                 gen_out = model.module.generator(out)
@@ -188,7 +189,7 @@ def evaluate(data, model):
                            SubsequentMask(ys.size(1)).to(config.device)
 
                 out = model.decode(memory, src_mask, ys, tgt_mask)
-                prob = model.generator(out[:, -1:])  # 只取最后一个 token
+                prob = F.log_softmax(model.generator(out[:, -1:]), dim=-1)  # 只取最后一个 token
                 _, next_word = torch.max(prob, dim=-1)
 
                 ys = torch.cat([ys, next_word], dim=1)

@@ -284,8 +284,8 @@ class Generator(nn.Module):
         self.proj = nn.Linear(d_model, vocab)
 
     def forward(self, x):
-        # 然后再进行log_softmax操作(在softmax结果上再做多一次log运算)
-        return F.log_softmax(self.proj(x), dim=-1)
+        # 返回logits，而不是log_softmax
+        return self.proj(x)
 
 
 class Transformer(nn.Module):
