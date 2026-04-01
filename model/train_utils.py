@@ -106,6 +106,10 @@ class NoamOpt:
         self._rate = rate  # 更新学习率
         self.optimizer.step()  # 执行一次优化步骤（更新参数）
 
+    def zero_grad(self):
+        """清除优化器的梯度"""
+        self.optimizer.zero_grad()
+
     def rate(self, step=None):
         """根据当前步数计算学习率"""
         # 如果没有传入step，使用当前步数

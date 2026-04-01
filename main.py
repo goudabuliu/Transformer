@@ -9,7 +9,7 @@ import sacrebleu
 from tqdm import tqdm
 
 from beam_decoder import beam_search
-from model.train_utils import  MultiGPULossCompute, get_std_opt
+from model.train_utils import get_std_opt
 from tools.tokenizer_utils import chinese_tokenizer_load
 from tools.create_exp_folder import create_exp_folder
 
@@ -19,90 +19,144 @@ logging.basicConfig(format='%(asctime)s-%(name)s-%(levelname)s-%(message)s', lev
 # 开启 TF32，RTX 30/40/5090 专用，速度×2，显存不变
 torch.set_float32_matmul_precision('medium')
 
-def run_epoch(data, model, loss_compute):
+def run_epoch(data, model, criterion, optimizer=None, accum_steps=1, scaler=None, use_amp=False):
+    """标准训练/验证循环，支持梯度累积和AMP
+
+    参数：
+        data: DataLoader迭代器
+        model: Transformer模型（已包装为DataParallel）
+        criterion: 损失函数
+        optimizer: 优化器（训练时提供，验证时为None）
+        accum_steps: 梯度累积步数
+        scaler: GradScaler实例（AMP用）
+        use_amp: 是否使用混合精度训练
+
+    返回：
+        average_loss: 平均损失（每个token的损失）
+    """
     total_tokens = 0.
     total_loss = 0.
 
-    # ========== 加在这里 ==========
-    accum_steps = 4    # 你可以用 2、4、8，越大等效batch越大
-    optimizer = None
-    # =============================
+    # 根据是否训练设置模型模式
+    if optimizer is not None:
+        model.train()
+    else:
+        model.eval()
 
-    for i, batch in enumerate(tqdm(data)):  # 加 enumerate
-        out = model(batch.src, batch.trg, batch.src_mask, batch.trg_mask)
-        loss = loss_compute(out, batch.trg_y, batch.ntokens)
+    for i, batch in enumerate(tqdm(data)):
+        # 将数据移动到设备
+        src = batch.src.to(config.device)
+        trg = batch.trg.to(config.device)
+        src_mask = batch.src_mask.to(config.device)
+        trg_mask = batch.trg_mask.to(config.device)
+        trg_y = batch.trg_y.to(config.device)
+        ntokens = batch.ntokens
 
-        # ========== 加梯度累积 ==========
-        if hasattr(loss_compute, 'optimizer') and loss_compute.optimizer is not None:
-            optimizer = loss_compute.optimizer
-            loss = loss / accum_steps       # 损失平均
-            loss.backward()                # 反向传播
+        # 前向传播
+        if use_amp and scaler is not None:
+            with torch.cuda.amp.autocast():
+                out = model(src, trg, src_mask, trg_mask)
+                # 使用模型的generator生成预测
+                gen_out = model.module.generator(out)
+                loss = criterion(
+                    gen_out.contiguous().view(-1, gen_out.size(-1)),
+                    trg_y.contiguous().view(-1)
+                ) / ntokens
+        else:
+            out = model(src, trg, src_mask, trg_mask)
+            gen_out = model.module.generator(out)
+            loss = criterion(
+                gen_out.contiguous().view(-1, gen_out.size(-1)),
+                trg_y.contiguous().view(-1)
+            ) / ntokens
 
-            # 累积 N 步后更新一次参数
+        # 训练阶段：反向传播和梯度累积
+        if optimizer is not None:
+            # 梯度累积：损失除以累积步数
+            if use_amp and scaler is not None:
+                scaler.scale(loss / accum_steps).backward()
+            else:
+                (loss / accum_steps).backward()
+
+            # 累积足够步数后更新参数
             if (i + 1) % accum_steps == 0 or (i + 1) == len(data):
-                optimizer.step()
+                if use_amp and scaler is not None:
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
                 optimizer.zero_grad()
 
-        total_loss += loss.item() * accum_steps  # 修正损失计算
-        total_tokens += batch.ntokens
+        total_loss += loss.item()
+        total_tokens += ntokens
 
-    return total_loss / total_tokens
+    return total_loss / total_tokens if total_tokens > 0 else 0.0
 
 def train(train_data, dev_data, model, model_par, criterion, optimizer):
     """训练并保存模型"""
+    import os  # 用于文件操作
+
     # best_bleu_score初始化
     best_bleu_score = -float('inf')  # 初始最佳BLEU分数为负无穷
     # 创建保存权重的路径
     exp_folder, weights_folder = create_exp_folder()
 
+    # 创建GradScaler（如果启用AMP）
+    scaler = torch.cuda.amp.GradScaler() if config.use_amp else None
+
     # 开始训练循环，迭代每个epoch
     for epoch in range(1, config.epoch_num + 1):
         logging.info(f"第{epoch}轮模型训练与验证")
-        # 设置模型为训练模式
+
+        # ==================== 训练阶段 ====================
         model.train()
-        # 进行一个epoch的训练，返回当前的训练损失
-        train_loss = run_epoch(train_data, model_par,
-                               MultiGPULossCompute(model.generator, criterion, config.device_id, optimizer))
+        train_loss = run_epoch(
+            train_data,
+            model_par,
+            criterion,
+            optimizer=optimizer,
+            accum_steps=config.accum_steps,
+            scaler=scaler,
+            use_amp=config.use_amp
+        )
 
-        # 设置模型为评估模式（即不计算梯度，优化）
-        # model.eval()
-        # 进行一个epoch的验证，返回当前的验证损失
-        # dev_loss = run_epoch(dev_data, model_par,
-        #                      MultiGPULossCompute(model.generator, criterion, config.device_id, None))
+        # ==================== 验证阶段（每个epoch都验证）====================
+        model.eval()
+        dev_loss = run_epoch(
+            dev_data,
+            model_par,
+            criterion,
+            optimizer=None,  # 验证时不更新参数
+            accum_steps=1,   # 验证时不使用梯度累积
+            scaler=None,     # 验证时不使用AMP
+            use_amp=False
+        )
 
-        # # 计算模型在验证集（dev_data）上的BLEU分数
-        # bleu_score = evaluate(dev_data, model)
-        # logging.info(f"Epoch: {epoch}, train_loss: {train_loss:.3f}, val_loss: {dev_loss:.3f}, Bleu Score: {bleu_score:.2f}\n")
+        # 计算模型在验证集（dev_data）上的BLEU分数
+        bleu_score = evaluate(dev_data, model)
+        logging.info(f"Epoch: {epoch}, train_loss: {train_loss:.3f}, val_loss: {dev_loss:.3f}, Bleu Score: {bleu_score:.2f}\n")
 
-        # # 如果当前epoch的模型的BLEU分数更优，则保存最佳模型
-        # if bleu_score > best_bleu_score:
-        #     # 如果之前已存在最优模型，先删除
-        #     if best_bleu_score != -float('inf'):
-        #         old_model_path = f"{weights_folder}/best_bleu_{best_bleu_score:.2f}.pth"
-        #         if os.path.exists(old_model_path):
-        #             os.remove(old_model_path)
+        # 如果当前epoch的模型的BLEU分数更优，则保存最佳模型
+        if bleu_score > best_bleu_score:
+            # 如果之前已存在最优模型，先删除
+            if best_bleu_score != -float('inf'):
+                old_model_path = f"{weights_folder}/best_bleu_{best_bleu_score:.2f}.pth"
+                if os.path.exists(old_model_path):
+                    os.remove(old_model_path)
 
-        #     model_path_best = f"{weights_folder}/best_bleu_{bleu_score:.2f}.pth"
-        #     # 保存当前模型的状态字典到指定路径
-        #     torch.save(model.state_dict(), model_path_best)
-        #     # 更新最佳BLEU分数
-        #     best_bleu_score = bleu_score
-        #     # 记录最佳模型保存信息到日志
+            model_path_best = f"{weights_folder}/best_bleu_{bleu_score:.2f}.pth"
+            # 保存当前模型的状态字典到指定路径
+            torch.save(model.state_dict(), model_path_best)
+            # 更新最佳BLEU分数
+            best_bleu_score = bleu_score
+            # 记录最佳模型保存信息到日志
+            logging.info(f"保存最佳模型: {model_path_best}")
 
         # 保存当前模型（最后一次训练）
         if epoch == config.epoch_num:  # 判断是否达到设定的训练轮数
             model_path_last = f"{weights_folder}/last_bleu_{bleu_score:.2f}.pth"  # 构建模型保存路径，包含BLEU分数
             torch.save(model.state_dict(), model_path_last)  # 保存模型的状态字典
-
-            # 设置模型为评估模式（即不计算梯度，优化）
-            model.eval()
-            # 进行一个epoch的验证，返回当前的验证损失
-            dev_loss = run_epoch(dev_data, model_par,
-                                 MultiGPULossCompute(model.generator, criterion, config.device_id, None))
-
-            # # 计算模型在验证集（dev_data）上的BLEU分数
-            bleu_score = evaluate(dev_data, model)
-            logging.info(f"Epoch: {epoch}, train_loss: {train_loss:.3f}, val_loss: {dev_loss:.3f}, Bleu Score: {bleu_score:.2f}\n")
+            logging.info(f"保存最终模型: {model_path_last}")
 
 
 def evaluate(data, model):
@@ -167,8 +221,7 @@ def test(data, model, criterion):
         model_par = torch.nn.DataParallel(model)
         model.eval()
         # 开始预测
-        test_loss = run_epoch(data, model_par,
-                              MultiGPULossCompute(model.generator, criterion, config.device_id, None))
+        test_loss = run_epoch(data, model_par, criterion, optimizer=None, accum_steps=1, scaler=None, use_amp=False)
         bleu_score = evaluate(data, model)
         logging.info('Test loss: {},  Bleu Score: {}'.format(test_loss, bleu_score))
 
@@ -185,11 +238,20 @@ def run():
     # batch_size=config.batch_size 表示每个批次的样本数量，具体值由配置文件决定
     # collate_fn=train_dataset.collate_fn 表示自定义的数据整理函数，用于处理每个批次的数据
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=config.batch_size,
-                                  collate_fn=train_dataset.collate_fn)
+                                  collate_fn=train_dataset.collate_fn,
+                                  num_workers=config.num_workers,
+                                  pin_memory=config.pin_memory,
+                                  prefetch_factor=2 if config.num_workers > 0 else None)
     dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=config.batch_size,
-                                collate_fn=dev_dataset.collate_fn)
+                                collate_fn=dev_dataset.collate_fn,
+                                num_workers=config.num_workers,
+                                pin_memory=config.pin_memory,
+                                prefetch_factor=2 if config.num_workers > 0 else None)
     test_dataloader = DataLoader(test_dataset, shuffle=False, batch_size=config.batch_size,
-                                 collate_fn=test_dataset.collate_fn)
+                                 collate_fn=test_dataset.collate_fn,
+                                 num_workers=config.num_workers,
+                                 pin_memory=config.pin_memory,
+                                 prefetch_factor=2 if config.num_workers > 0 else None)
 
     # 初始化模型
     model = make_model(config.src_vocab_size, config.tgt_vocab_size, config.n_layers,
