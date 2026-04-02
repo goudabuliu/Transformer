@@ -78,7 +78,7 @@ def attention(query, key, value, mask=None, dropout=None):
     """
     # 如果存在要进行mask的内容，则将那些为0的部分替换成一个很大的负数
     if mask is not None:
-        scores = scores.masked_fill(mask == 0, torch.finfo(scores.dtype).min)
+        scores = scores.masked_fill(mask == 0, -1e9)
 
     # 将mask后的attention矩阵按照最后一个维度进行softmax
     p_attn = F.softmax(scores, dim=-1)
@@ -284,8 +284,8 @@ class Generator(nn.Module):
         self.proj = nn.Linear(d_model, vocab)
 
     def forward(self, x):
-        # 返回logits，而不是log_softmax
-        return self.proj(x)
+        # 然后再进行log_softmax操作(在softmax结果上再做多一次log运算)
+        return F.log_softmax(self.proj(x), dim=-1)
 
 
 class Transformer(nn.Module):

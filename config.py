@@ -5,7 +5,6 @@ import torch
 这一类参数决定了模型架构的规模和计算复杂度。
 更高的维度、更多的层和头可以增强模型的能力，但也会增加计算和训练时间。
 """
-
 # d_model = 512 表示模型的每个token的表示将使用512维的向量，这也决定了Transformer中间层的大小。
 d_model = 512
 # 多头注意力机制中的头数。
@@ -21,7 +20,6 @@ d_ff = 2048
 # dropout = 0.1表示在训练过程中，随机丢弃10%的神经元来避免模型过拟合。
 dropout = 0.1
 
-
 """
 词汇表和标记配置
 这些参数控制词汇表的大小和特殊标记的设置。
@@ -33,11 +31,21 @@ src_vocab_size = 32000
 tgt_vocab_size = 32000
 # padding_idx = 0表示填充token的索引为0，这通常用于填充短句，使得每个句子都具有相同的长度。
 padding_idx = 0
-# 1 = UNK（未知词，罕见词 / 未登录词）
 # bos_idx = 2表示句子的开始符号（BOS）的索引是2。
 bos_idx = 2
 # eos_idx = 3表示句子的结束符号（EOS）的索引是3。
 eos_idx = 3
+
+"""
+训练配置
+这些参数控制训练过程中的配置和训练策略。
+"""
+# 训练时的批次大小。
+batch_size = 32
+# 训练的总轮次。
+epoch_num = 3
+# 学习率（learning rate）。
+lr = 3e-4
 
 """
 解码和生成设置
@@ -46,9 +54,6 @@ eos_idx = 3
 # greed decode的最大句子长度
 # max_len = 60表示解码时生成的最大句子长度为60个token。
 max_len = 60
-# 训练时序列最大长度（防止显存爆炸，截断过长的序列）
-# max_seq_len = 80表示训练时截断超过80个token的序列
-max_seq_len = 80
 # 在计算BLEU评分时使用的Beam Search的大小。
 # beam_size = 3表示在解码时，使用大小为3的Beam Search进行翻译。
 beam_size = 3
@@ -71,34 +76,10 @@ test_model_path = './run/train/exp/weights/best_bleu_26.30.pth'
 """
 # 指定使用的GPU设备的ID。
 # 指定设备ID的列表。
-gpu_id = '0'          # 逗号分隔的GPU ID                                                                                                                                                                   
-device_id = [0]      # 设备ID列表 
+gpu_id = '0'
+device_id = [0]
 # set device
 if gpu_id != '':
-    device = torch.device(f"cuda:{device_id[0]}")
+    device = torch.device(f"cuda:{gpu_id}")
 else:
     device = torch.device('cpu')
-
-
-"""
-训练优化配置
-这些参数控制训练过程中的优化策略，用于提高训练速度和效率。
-"""
-# 训练时的批次大小。
-batch_size = 64
-# 训练的总轮次。
-epoch_num = 20
-# 学习率（learning rate）。
-lr = 3e-4
-# 梯度累积步数（增大有效批次大小，节省显存）
-accum_steps = 4
-# 是否使用混合精度训练（AMP），可显著提升训练速度
-use_amp = True
-# DataLoader工作进程数（建议为CPU核心数的2/3，AutoDL机器12核心可用8）
-num_workers = 8
-# 是否使用内存锁页（pin_memory），加速CPU到GPU的数据传输
-pin_memory = True
-# 增大chunk_size减少GPU内核启动开销（原MultiGPULossCompute中使用，现用于兼容性）
-chunk_size = 32
-# 学习率调整因子（因批次增大，建议适当降低学习率）
-lr_factor = 0.5  # 原始学习率乘以这个因子
