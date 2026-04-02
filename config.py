@@ -68,11 +68,11 @@ test_model_path = './run/train/exp/weights/best_bleu_26.30.pth'
 """
 # 指定使用的GPU设备的ID。
 # 指定设备ID的列表。
-gpu_id = '0,1'          # 逗号分隔的GPU ID                                                                                                                                                                   
-device_id = [0, 1]      # 设备ID列表 
+gpu_id = '0'          # 逗号分隔的GPU ID                                                                                                                                                                   
+device_id = [0]      # 设备ID列表 
 # set device
 if gpu_id != '':
-    device = torch.device(f"cuda:{gpu_id}")
+    device = torch.device(f"cuda:{device_id[0]}")
 else:
     device = torch.device('cpu')
 
@@ -84,11 +84,11 @@ else:
 # 训练时的批次大小。
 batch_size = 64
 # 训练的总轮次。
-epoch_num = 10
+epoch_num = 1
 # 学习率（learning rate）。
 lr = 3e-4
 # 梯度累积步数（增大有效批次大小，节省显存）
-accum_steps = 8
+accum_steps = 4
 # 是否使用混合精度训练（AMP），可显著提升训练速度
 use_amp = True
 # DataLoader工作进程数（建议为CPU核心数的2/3，AutoDL机器12核心可用8）
