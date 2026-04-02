@@ -259,7 +259,7 @@ def run():
                        config.d_model, config.d_ff, config.n_heads, config.dropout)
 
     #  将模型包装成数据并行模式,这样可以在多个GPU上并行处理数据，提高训练效率
-    model_par = torch.nn.DataParallel(model)
+    model_par = torch.nn.DataParallel(model, device_ids=config.device_id) 
 
     # 训练阶段，选择损失函数和优化器
     # CrossEntropyLoss是常见的分类问题损失函数，ignore_index=0表示忽略填充部分
@@ -276,7 +276,7 @@ def run():
 
 if __name__ == "__main__":
     import os
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+     os.environ['CUDA_VISIBLE_DEVICES'] = config.gpu_id 
     import warnings
     warnings.filterwarnings('ignore')
     run()

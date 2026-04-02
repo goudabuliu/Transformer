@@ -79,8 +79,8 @@ test_model_path = './run/train/exp/weights/best_bleu_26.30.pth'
 """
 # 指定使用的GPU设备的ID。
 # 指定设备ID的列表。
-gpu_id = '0'
-device_id = [0]
+gpu_id = '0,1'          # 逗号分隔的GPU ID                                                                                                                                                                   
+device_id = [0, 1]      # 设备ID列表 
 # set device
 if gpu_id != '':
     device = torch.device(f"cuda:{gpu_id}")
