@@ -59,6 +59,11 @@ def run_epoch(data, model, criterion, optimizer=None, accum_steps=1, scaler=None
                 out = model(src, trg, src_mask, trg_mask)
                 # 使用模型的generator生成预测
                 gen_out = model.module.generator(out)
+                # 调试：检查输出和标签
+                if i == 0 and optimizer is not None:  # 第一个训练batch
+                    print(f"[DEBUG] Batch {i}: ntokens={ntokens}, src_shape={src.shape}, trg_shape={trg.shape}")
+                    print(f"[DEBUG] gen_out shape: {gen_out.shape}, range: [{gen_out.min():.3f}, {gen_out.max():.3f}]")
+                    print(f"[DEBUG] trg_y shape: {trg_y.shape}, unique: {torch.unique(trg_y).shape[0]} values")
                 loss = criterion(
                     gen_out.contiguous().view(-1, gen_out.size(-1)),
                     trg_y.contiguous().view(-1)
@@ -66,6 +71,11 @@ def run_epoch(data, model, criterion, optimizer=None, accum_steps=1, scaler=None
         else:
             out = model(src, trg, src_mask, trg_mask)
             gen_out = model.module.generator(out)
+            # 调试：检查输出和标签
+            if i == 0 and optimizer is not None:  # 第一个训练batch
+                print(f"[DEBUG] Batch {i}: ntokens={ntokens}, src_shape={src.shape}, trg_shape={trg.shape}")
+                print(f"[DEBUG] gen_out shape: {gen_out.shape}, range: [{gen_out.min():.3f}, {gen_out.max():.3f}]")
+                print(f"[DEBUG] trg_y shape: {trg_y.shape}, unique: {torch.unique(trg_y).shape[0]} values")
             loss = criterion(
                 gen_out.contiguous().view(-1, gen_out.size(-1)),
                 trg_y.contiguous().view(-1)
@@ -104,6 +114,15 @@ def train(train_data, dev_data, model, model_par, criterion, optimizer):
 
     # 创建GradScaler（如果启用AMP）
     scaler = torch.cuda.amp.GradScaler() if config.use_amp else None
+
+    # 调试：打印优化器信息
+    logging.info(f"优化器: {type(optimizer).__name__}")
+    if hasattr(optimizer, 'optimizer'):
+        logging.info(f"内部优化器: {type(optimizer.optimizer).__name__}")
+    if hasattr(optimizer, 'rate'):
+        logging.info(f"初始学习率: {optimizer.rate(1):.2e}")
+    elif hasattr(optimizer, 'param_groups'):
+        logging.info(f"优化器学习率: {optimizer.param_groups[0]['lr']}")
 
     # 开始训练循环，迭代每个epoch
     for epoch in range(1, config.epoch_num + 1):
