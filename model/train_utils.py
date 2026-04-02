@@ -110,6 +110,10 @@ class NoamOpt:
         """清除优化器的梯度"""
         self.optimizer.zero_grad()
 
+    def __getattr__(self, name):
+        """转发未定义的属性到内部优化器"""
+        return getattr(self.optimizer, name)
+
     def rate(self, step=None):
         """根据当前步数计算学习率"""
         # 如果没有传入step，使用当前步数
