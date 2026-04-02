@@ -111,7 +111,7 @@ def train(train_data, dev_data, model, model_par, criterion, optimizer):
         logging.info(f"第{epoch}轮模型训练与验证")
 
         # ==================== 训练阶段 ====================
-        model.train()
+        model_par.train()
         train_loss = run_epoch(
             train_data,
             model_par,
@@ -123,7 +123,7 @@ def train(train_data, dev_data, model, model_par, criterion, optimizer):
         )
 
         # ==================== 验证阶段（每个epoch都验证）====================
-        model.eval()
+        model_par.eval()
         dev_loss = run_epoch(
             dev_data,
             model_par,
@@ -135,7 +135,8 @@ def train(train_data, dev_data, model, model_par, criterion, optimizer):
         )
 
         # 计算模型在验证集（dev_data）上的BLEU分数
-        bleu_score = evaluate(dev_data, model)
+        # 使用model_par.module进行评估，确保使用训练过的权重
+        bleu_score = evaluate(dev_data, model_par.module)
         logging.info(f"Epoch: {epoch}, train_loss: {train_loss:.3f}, val_loss: {dev_loss:.3f}, Bleu Score: {bleu_score:.2f}\n")
 
         # 如果当前epoch的模型的BLEU分数更优，则保存最佳模型
@@ -148,7 +149,8 @@ def train(train_data, dev_data, model, model_par, criterion, optimizer):
 
             model_path_best = f"{weights_folder}/best_bleu_{bleu_score:.2f}.pth"
             # 保存当前模型的状态字典到指定路径
-            torch.save(model.state_dict(), model_path_best)
+            # 保存model_par.module的权重，确保保存的是训练过的模型
+            torch.save(model_par.module.state_dict(), model_path_best)
             # 更新最佳BLEU分数
             best_bleu_score = bleu_score
             # 记录最佳模型保存信息到日志
@@ -157,7 +159,7 @@ def train(train_data, dev_data, model, model_par, criterion, optimizer):
         # 保存当前模型（最后一次训练）
         if epoch == config.epoch_num:  # 判断是否达到设定的训练轮数
             model_path_last = f"{weights_folder}/last_bleu_{bleu_score:.2f}.pth"  # 构建模型保存路径，包含BLEU分数
-            torch.save(model.state_dict(), model_path_last)  # 保存模型的状态字典
+            torch.save(model_par.module.state_dict(), model_path_last)  # 保存模型的状态字典
             logging.info(f"保存最终模型: {model_path_last}")
 
 
@@ -221,10 +223,10 @@ def test(data, model, criterion):
         # 加载模型
         model.load_state_dict(torch.load(config.model_path))
         model_par = torch.nn.DataParallel(model)
-        model.eval()
+        model_par.eval()
         # 开始预测
         test_loss = run_epoch(data, model_par, criterion, optimizer=None, accum_steps=1, scaler=None, use_amp=False)
-        bleu_score = evaluate(data, model)
+        bleu_score = evaluate(data, model_par.module)
         logging.info('Test loss: {},  Bleu Score: {}'.format(test_loss, bleu_score))
 
 
