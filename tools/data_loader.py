@@ -1,5 +1,3 @@
-
-
 import torch
 import json
 import numpy as np
@@ -21,7 +19,6 @@ def subsequent_mask(size):
     attn_shape = (1, size, size)
 
     # 创建上三角矩阵（右上角为1，左下角为0）
-    #np.triu(..., k=1)：保留主对角线上方元素（对角线及下方全为 0）
     subsequent_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')
 
     # 返回一个右上角(不含主对角线)为全False，左下角(含主对角线)为全True的subsequent_mask矩阵
@@ -32,15 +29,6 @@ class Batch:
     """
     Class for holding a batch of data with corresponding masks during training.
     该类用于存储一个训练批次的数据，包括源语言和目标语言的文本、token以及mask。
-    """
-    """
-        批次数据封装（训练专用）
-        【参数示例】
-        src_text: ["I love you", "I"]          # 源语言文本
-        trg_text: ["我爱你", "我"]              # 目标语言文本
-        src    : [[2,10,11,12,3], [2,10,3,0,0]] # 源语言token（已补齐）
-        trg    : [[2,20,21,22,3], [2,20,3,0,0]] # 目标语言token（已补齐）
-        pad    : 0                              # 填充符ID
     """
     def __init__(self, src_text, trg_text, src, trg=None, pad=0):
         """
@@ -53,14 +41,15 @@ class Batch:
         """
         self.src_text = src_text  # 源语言文本
         self.trg_text = trg_text  # 目标语言文本
-        self.src = src  # 保存源语言数据（CPU）
+        src = src.to(DEVICE)   # 将源语言数据移到指定设备（GPU/CPU）
+        self.src = src  # 保存源语言数据
         # 对于当前输入的句子非空部分进行判断成bool序列
         # 并在seq length前面增加一维，形成维度为 1×seq length 的矩阵
         self.src_mask = (src != pad).unsqueeze(-2)  # 生成源语言的mask，屏蔽padding部分
 
         # 如果输出目标不为空，则需要对decoder要使用到的target句子进行mask
         if trg is not None:
-            # 不在此处将张量移动到设备，保持在CPU上；Device移动由模型/DataParallel在需要时处理
+            trg = trg.to(DEVICE)  # 将目标语言数据移到指定设备
             # decoder训练时应预测输出的target结果，目标语言的输入部分（去掉最后一个词，因为是要预测的目标）
             self.trg = trg[:, :-1]
             # 目标语言的输出部分（从第二个词开始，是目标预测的结果）
@@ -69,7 +58,6 @@ class Batch:
             self.trg_mask = self.make_std_mask(self.trg, pad)
             # 将应输出的target结果中实际的词数进行统计
             self.ntokens = (self.trg_y != pad).data.sum()
-
 
     # Mask掩码操作
     @staticmethod
@@ -81,8 +69,8 @@ class Batch:
         :return: 目标语言的mask
         """
         tgt_mask = (tgt != pad).unsqueeze(-2)   # 为目标语言中的非pad部分生成mask
-        # 添加后续词的遮蔽（subsequent_mask在CPU上生成，使用type_as保证类型/设备一致）
-        tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask)
+        # 添加后续词的遮蔽
+        tgt_mask = tgt_mask & Variable(subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data))
         return tgt_mask  # 返回目标语言的mask
 
 
@@ -148,60 +136,19 @@ class MTDataset(Dataset):
         """
         return len(self.out_en_sent)
 
-
-
-
     def collate_fn(self, batch):
         """
             定义如何将数据样本合并成一个batch，进行填充、编码等操作。
             :param batch: 一个batch的样本
             :return: 返回处理后的Batch对象
         """
-        """
-            # 示例说明（直接当注释）
-            # 输入2句中英对：
-            # 英文："I love you", "I"
-            # 中文："我爱你",   "我"
-
-            # 1. 编码 + 加 BOS/EOS
-            # BOS=2, EOS=3, PAD=0
-            # I love you → [2,10,11,12,3]
-            # I         → [2,10,3]
-            # 我爱你    → [2,20,21,22,3]
-            # 我        → [2,20,3]
-
-            # 2. 补齐后 batch
-            # src: [[2,10,11,12,3], [2,10,3,0,0]]
-            # tgt: [[2,20,21,22,3], [2,20,3,0,0]]
-
-            # 3. 解码器输入与标签错位
-            # trg   = tgt[:, :-1]  输入: [2,20,21,22]
-            # trg_y = tgt[:, 1:]   标签: [20,21,22,3]
-
-            # 4. 掩码作用
-            # src_mask: 屏蔽 padding
-            # tgt_mask: 屏蔽 padding + 未来词（自回归）
-        """
-        # 从batch中提取英文和中文文本句子
+        # 从batch中提取英文和中文文本
         src_text = [x[0] for x in batch]
         tgt_text = [x[1] for x in batch]
 
         # 对英文和中文句子进行分词，并加上BOS和EOS标记
-        # 使用config.max_seq_len截断过长的序列，防止显存爆炸
-        max_seq_len = getattr(config, 'max_seq_len', None)
-        src_tokens = []
-        tgt_tokens = []
-        for sent in src_text:
-            encoded = self.sp_eng.EncodeAsIds(sent)
-            if max_seq_len and len(encoded) > max_seq_len - 2:  # 保留位置给BOS和EOS
-                encoded = encoded[:max_seq_len - 2]
-            src_tokens.append([self.BOS] + encoded + [self.EOS])
-        for sent in tgt_text:
-            encoded = self.sp_chn.EncodeAsIds(sent)
-            if max_seq_len and len(encoded) > max_seq_len - 2:
-                encoded = encoded[:max_seq_len - 2]
-            tgt_tokens.append([self.BOS] + encoded + [self.EOS])
-
+        src_tokens = [[self.BOS] + self.sp_eng.EncodeAsIds(sent) + [self.EOS] for sent in src_text]
+        tgt_tokens = [[self.BOS] + self.sp_chn.EncodeAsIds(sent) + [self.EOS] for sent in tgt_text]
 
         # 对英文和中文句子进行填充，保证每个句子的长度相同
         batch_input = pad_sequence([torch.LongTensor(np.array(l_)) for l_ in src_tokens],
