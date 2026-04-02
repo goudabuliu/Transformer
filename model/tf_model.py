@@ -78,7 +78,7 @@ def attention(query, key, value, mask=None, dropout=None):
     """
     # 如果存在要进行mask的内容，则将那些为0的部分替换成一个很大的负数
     if mask is not None:
-        scores = scores.masked_fill(mask == 0, -1e9)
+        scores = scores.masked_fill(mask == 0, torch.finfo(scores.dtype).min)
 
     # 将mask后的attention矩阵按照最后一个维度进行softmax
     p_attn = F.softmax(scores, dim=-1)
