@@ -46,6 +46,9 @@ eos_idx = 3
 # greed decode的最大句子长度
 # max_len = 60表示解码时生成的最大句子长度为60个token。
 max_len = 60
+# 训练时序列最大长度（防止显存爆炸，截断过长的序列）
+# max_seq_len = 80表示训练时截断超过80个token的序列
+max_seq_len = 80
 # 在计算BLEU评分时使用的Beam Search的大小。
 # beam_size = 3表示在解码时，使用大小为3的Beam Search进行翻译。
 beam_size = 3

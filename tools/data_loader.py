@@ -186,8 +186,20 @@ class MTDataset(Dataset):
         tgt_text = [x[1] for x in batch]
 
         # 对英文和中文句子进行分词，并加上BOS和EOS标记
-        src_tokens = [[self.BOS] + self.sp_eng.EncodeAsIds(sent) + [self.EOS] for sent in src_text]
-        tgt_tokens = [[self.BOS] + self.sp_chn.EncodeAsIds(sent) + [self.EOS] for sent in tgt_text]
+        # 使用config.max_seq_len截断过长的序列，防止显存爆炸
+        max_seq_len = getattr(config, 'max_seq_len', None)
+        src_tokens = []
+        tgt_tokens = []
+        for sent in src_text:
+            encoded = self.sp_eng.EncodeAsIds(sent)
+            if max_seq_len and len(encoded) > max_seq_len - 2:  # 保留位置给BOS和EOS
+                encoded = encoded[:max_seq_len - 2]
+            src_tokens.append([self.BOS] + encoded + [self.EOS])
+        for sent in tgt_text:
+            encoded = self.sp_chn.EncodeAsIds(sent)
+            if max_seq_len and len(encoded) > max_seq_len - 2:
+                encoded = encoded[:max_seq_len - 2]
+            tgt_tokens.append([self.BOS] + encoded + [self.EOS])
 
         # 对英文和中文句子进行填充，保证每个句子的长度相同
         batch_input = pad_sequence([torch.LongTensor(np.array(l_)) for l_ in src_tokens],
