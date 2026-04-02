@@ -105,14 +105,6 @@ def train(train_data, dev_data, model, model_par, criterion, optimizer):
     # 创建GradScaler（如果启用AMP）
     scaler = torch.cuda.amp.GradScaler() if config.use_amp else None
 
-    # 调试：打印优化器信息
-    logging.info(f"优化器: {type(optimizer).__name__}")
-    if hasattr(optimizer, 'optimizer'):
-        logging.info(f"内部优化器: {type(optimizer.optimizer).__name__}")
-    if hasattr(optimizer, 'rate'):
-        logging.info(f"初始学习率: {optimizer.rate(1):.2e}")
-    elif hasattr(optimizer, 'param_groups'):
-        logging.info(f"优化器学习率: {optimizer.param_groups[0]['lr']}")
 
     # 开始训练循环，迭代每个epoch
     for epoch in range(1, config.epoch_num + 1):
