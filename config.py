@@ -40,17 +40,6 @@ bos_idx = 2
 eos_idx = 3
 
 """
-训练配置
-这些参数控制训练过程中的配置和训练策略。
-"""
-# 训练时的批次大小。
-batch_size = 64
-# 训练的总轮次。
-epoch_num = 10
-# 学习率（learning rate）。
-lr = 3e-4
-
-"""
 解码和生成设置
 这些参数控制模型生成输出时的行为，影响生成的句子质量。
 """
@@ -92,16 +81,20 @@ else:
 训练优化配置
 这些参数控制训练过程中的优化策略，用于提高训练速度和效率。
 """
+# 训练时的批次大小。
+batch_size = 64
+# 训练的总轮次。
+epoch_num = 10
+# 学习率（learning rate）。
+lr = 3e-4
 # 梯度累积步数（增大有效批次大小，节省显存）
-accum_steps = 4
+accum_steps = 8
 # 是否使用混合精度训练（AMP），可显著提升训练速度
 use_amp = True
 # DataLoader工作进程数（建议为CPU核心数的2/3，AutoDL机器12核心可用8）
 num_workers = 8
 # 是否使用内存锁页（pin_memory），加速CPU到GPU的数据传输
 pin_memory = True
-# 增大批次大小（RTX 3090 24GB可以尝试128或256）
-batch_size = 128
 # 增大chunk_size减少GPU内核启动开销（原MultiGPULossCompute中使用，现用于兼容性）
 chunk_size = 32
 # 学习率调整因子（因批次增大，建议适当降低学习率）

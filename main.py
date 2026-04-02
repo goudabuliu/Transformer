@@ -276,7 +276,7 @@ def run():
 
 if __name__ == "__main__":
     import os
-     os.environ['CUDA_VISIBLE_DEVICES'] = config.gpu_id 
+    os.environ['CUDA_VISIBLE_DEVICES'] = config.gpu_id 
     import warnings
     warnings.filterwarnings('ignore')
     run()
