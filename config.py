@@ -87,7 +87,7 @@ else:
 # 训练时的批次大小。
 batch_size = 64
 # 训练的总轮次。
-epoch_num = 1
+epoch_num = 20
 # 学习率（learning rate）。
 lr = 3e-4
 # 梯度累积步数（增大有效批次大小，节省显存）

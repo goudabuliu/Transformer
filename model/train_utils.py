@@ -124,7 +124,7 @@ class NoamOpt:
 
 def get_std_opt(model):
     # 创建并返回一个NoamOpt优化器，包含Adam优化器作为基础
-    # 原始Transformer论文使用factor=2，但实践发现对于小批次需要更大学习率
-    # 改为factor=100以获得合适的初始学习率 (~4.4e-6 at step 1)
-    return NoamOpt(model.src_embed[0].d_model, 100, 10000,
+    # 对于小批次训练，需要更大的学习率因子
+    # factor=1000 对应初始学习率 ~4.4e-5，峰值 ~4.4e-3
+    return NoamOpt(model.src_embed[0].d_model, 1000, 10000,
                    torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))

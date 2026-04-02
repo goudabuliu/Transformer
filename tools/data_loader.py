@@ -70,15 +70,6 @@ class Batch:
             # 将应输出的target结果中实际的词数进行统计
             self.ntokens = (self.trg_y != pad).data.sum()
 
-            # 调试：打印batch信息
-            if hasattr(self, 'debug_printed') is False:
-                self.debug_printed = True
-                print(f"[BATCH_DEBUG] src shape: {src.shape}, trg shape: {trg.shape}")
-                print(f"[BATCH_DEBUG] trg_y shape: {self.trg_y.shape}, non-pad tokens: {self.ntokens}")
-                print(f"[BATCH_DEBUG] trg_y sample (first 5 tokens of first 2 seqs):")
-                for i in range(min(2, self.trg_y.shape[0])):
-                    non_pad = self.trg_y[i][self.trg_y[i] != pad]
-                    print(f"  Seq {i}: {non_pad[:5].tolist()}... (共{len(non_pad)}个非pad token)")
 
     # Mask掩码操作
     @staticmethod
@@ -211,9 +202,6 @@ class MTDataset(Dataset):
                 encoded = encoded[:max_seq_len - 2]
             tgt_tokens.append([self.BOS] + encoded + [self.EOS])
 
-        # 调试：打印第一个句子的token信息
-        if len(src_tokens) > 0 and len(tgt_tokens) > 0:
-            print(f"[DATA_DEBUG] 第一个句子: src_tokens={src_tokens[0][:10]}... (共{len(src_tokens[0])}), tgt_tokens={tgt_tokens[0][:10]}... (共{len(tgt_tokens[0])})")
 
         # 对英文和中文句子进行填充，保证每个句子的长度相同
         batch_input = pad_sequence([torch.LongTensor(np.array(l_)) for l_ in src_tokens],
